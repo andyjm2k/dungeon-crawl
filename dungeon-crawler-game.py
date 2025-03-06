@@ -425,19 +425,83 @@ def generate_dungeon(level):
     # Create grid
     grid = [[1 for _ in range(COLS)] for _ in range(ROWS)]
     
-    # Create floor tile pattern
-    floor_pattern = [[random.choice([dungeon_tile1, dungeon_tile2]) for _ in range(COLS)] for _ in range(ROWS)]
+    # Create floor tile pattern - varies by level
+    # Every 3 levels, we change the floor tiles for more variety
+    level_theme = (level - 1) // 3
+    if level_theme == 0:  # Levels 1-3: Standard dungeon
+        floor_tiles = [dungeon_tile1, dungeon_tile2]
+        # More dungeon_tile1 for lower levels
+        weights = [0.7, 0.3]
+    elif level_theme == 1:  # Levels 4-6: More dungeon_tile2
+        floor_tiles = [dungeon_tile1, dungeon_tile2]
+        # More dungeon_tile2 for middle levels
+        weights = [0.3, 0.7]
+    else:  # Levels 7+: Even mix but with patterns
+        floor_tiles = [dungeon_tile1, dungeon_tile2]
+        weights = [0.5, 0.5]
+    
+    # Generate floor pattern based on level theme
+    floor_pattern = []
+    for y in range(ROWS):
+        row = []
+        for x in range(COLS):
+            # Add some patterns based on level
+            if level_theme >= 2 and (x + y) % 2 == 0:  # Checkerboard for higher levels
+                tile = floor_tiles[0]
+            elif level_theme >= 2 and (x + y) % 2 == 1:
+                tile = floor_tiles[1]
+            else:
+                # Random selection with weights
+                tile = random.choices(floor_tiles, weights=weights, k=1)[0]
+            row.append(tile)
+        floor_pattern.append(row)
 
-    # Create rooms with more structure
+    # Dungeon generation strategy varies by level
+    # Determine room parameters based on level
     rooms = []
-    max_attempts = 50
-    target_rooms = 5 + level  # Base number of rooms
-    min_room_size = 5
-    max_room_size = 8
+    level_mod = level % 5  # Cycle through 5 different dungeon types
+    
+    if level_mod == 0:  # Cavernous levels - fewer, larger rooms
+        max_attempts = 40
+        target_rooms = 3 + level // 2
+        min_room_size = 8
+        max_room_size = 15
+        sectors_h = 2
+        sectors_v = 2
+    elif level_mod == 1:  # Cramped levels - many small rooms
+        max_attempts = 60
+        target_rooms = 8 + level // 2
+        min_room_size = 4
+        max_room_size = 7
+        sectors_h = 4
+        sectors_v = 4
+    elif level_mod == 2:  # Long horizontal rooms
+        max_attempts = 50
+        target_rooms = 5 + level // 2
+        min_room_width = 8
+        max_room_width = 14
+        min_room_height = 4
+        max_room_height = 7
+        sectors_h = 3
+        sectors_v = 3
+    elif level_mod == 3:  # Long vertical rooms
+        max_attempts = 50
+        target_rooms = 5 + level // 2
+        min_room_width = 4
+        max_room_width = 7
+        min_room_height = 8
+        max_room_height = 14
+        sectors_h = 3
+        sectors_v = 3
+    else:  # Balanced medium rooms
+        max_attempts = 50
+        target_rooms = 6 + level // 2
+        min_room_size = 5
+        max_room_size = 10
+        sectors_h = 3
+        sectors_v = 3
 
-    # Divide the dungeon into sectors to ensure better distribution
-    sectors_h = 3
-    sectors_v = 3
+    # Calculate sector dimensions
     sector_w = (COLS - 2) // sectors_h
     sector_h = (ROWS - 2) // sectors_v
 
@@ -446,8 +510,16 @@ def generate_dungeon(level):
         for sx in range(sectors_h):
             attempts = 0
             while attempts < max_attempts and len(rooms) < target_rooms:
-                room_width = random.randint(min_room_size, max_room_size)
-                room_height = random.randint(min_room_size, max_room_size)
+                # Room size depends on level type
+                if level_mod == 2:  # Horizontal rooms
+                    room_width = random.randint(min_room_width, max_room_width)
+                    room_height = random.randint(min_room_height, max_room_height)
+                elif level_mod == 3:  # Vertical rooms
+                    room_width = random.randint(min_room_width, max_room_width)
+                    room_height = random.randint(min_room_height, max_room_height)
+                else:
+                    room_width = random.randint(min_room_size, max_room_size)
+                    room_height = random.randint(min_room_size, max_room_size)
                 
                 # Calculate bounds for this sector
                 min_x = 1 + sx * sector_w
@@ -459,21 +531,54 @@ def generate_dungeon(level):
                 max_x = min(max_x, COLS - room_width - 1)
                 max_y = min(max_y, ROWS - room_height - 1)
                 
+                # Add some variability to room placement
+                if max_x <= min_x:
+                    max_x = min_x + 1
+                if max_y <= min_y:
+                    max_y = min_y + 1
+                
                 x = random.randint(min_x, max_x)
                 y = random.randint(min_y, max_y)
 
-                # Add padding around rooms
+                # Add padding around rooms (varies by level)
+                padding = 1 if level_mod in [1, 2, 3] else 2  # Tighter packing for some level types
                 overlaps = any(
-                    x - 1 < r[0] + r[2] + 1 and x + room_width + 1 > r[0] and
-                    y - 1 < r[1] + r[3] + 1 and y + room_height + 1 > r[1]
+                    x - padding < r[0] + r[2] + padding and x + room_width + padding > r[0] and
+                    y - padding < r[1] + r[3] + padding and y + room_height + padding > r[1]
                     for r in rooms
                 )
 
                 if not overlaps:
                     # Carve out room
-                    for i in range(y, y + room_height):
-                        for j in range(x, x + room_width):
-                            grid[i][j] = 0
+                    # Add randomness to room shape in higher levels
+                    if level > 3 and random.random() < 0.3:  # 30% chance for non-rectangular rooms in higher levels
+                        # Create an irregular room by carving a slightly smaller core
+                        core_w = max(room_width - 2, 3)
+                        core_h = max(room_height - 2, 3)
+                        core_x = x + random.randint(0, room_width - core_w)
+                        core_y = y + random.randint(0, room_height - core_h)
+                        
+                        # Carve the core first
+                        for i in range(core_y, core_y + core_h):
+                            for j in range(core_x, core_x + core_w):
+                                grid[i][j] = 0
+                        
+                        # Add random extensions
+                        extensions = random.randint(2, 4)
+                        for _ in range(extensions):
+                            ext_x = random.randint(x, x + room_width - 1)
+                            ext_y = random.randint(y, y + room_height - 1)
+                            ext_w = random.randint(2, 4)
+                            ext_h = random.randint(2, 4)
+                            for i in range(max(y, ext_y), min(y + room_height, ext_y + ext_h)):
+                                for j in range(max(x, ext_x), min(x + room_width, ext_x + ext_w)):
+                                    grid[i][j] = 0
+                    else:
+                        # Regular rectangular room
+                        for i in range(y, y + room_height):
+                            for j in range(x, x + room_width):
+                                grid[i][j] = 0
+                    
                     rooms.append((x, y, room_width, room_height))
                     break
                 attempts += 1
@@ -520,27 +625,110 @@ def generate_dungeon(level):
         
         return None
 
-    # Connect rooms in a more structured way
-    for i in range(len(rooms) - 1):
-        room1 = rooms[i]
-        room2 = rooms[i + 1]
+    # Connect rooms based on level type
+    if level_mod == 0:  # Cavernous: connect with wider corridors
+        corridor_width = 2
+    elif level_mod == 1:  # Cramped: connect with more direct, narrow paths
+        corridor_width = 1
+    else:
+        corridor_width = 1 + level // 5  # Wider corridors in deeper levels
+    
+    # Decide on connection pattern
+    if level_mod == 4 or random.random() < 0.3:  # Circular connection for some levels
+        # Connect rooms in a circle
+        for i in range(len(rooms)):
+            room1 = rooms[i]
+            room2 = rooms[(i + 1) % len(rooms)]
+            
+            # Get center points of rooms
+            start_x = room1[0] + room1[2] // 2
+            start_y = room1[1] + room1[3] // 2
+            end_x = room2[0] + room2[2] // 2
+            end_y = room2[1] + room2[3] // 2
+            
+            # Create corridor between rooms
+            path = create_corridor((start_x, start_y), (end_x, end_y))
+            if path:
+                for x, y in path:
+                    grid[y][x] = 0
+                    # Add width to corridors
+                    for w in range(corridor_width):
+                        for dx, dy in [(w, 0), (0, w), (-w, 0), (0, -w)]:
+                            nx, ny = x + dx, y + dy
+                            if 0 < nx < COLS-1 and 0 < ny < ROWS-1:
+                                grid[ny][nx] = 0
+    else:
+        # Connect rooms in sequence for most levels
+        for i in range(len(rooms) - 1):
+            room1 = rooms[i]
+            room2 = rooms[i + 1]
+            
+            # Get center points of rooms
+            start_x = room1[0] + room1[2] // 2
+            start_y = room1[1] + room1[3] // 2
+            end_x = room2[0] + room2[2] // 2
+            end_y = room2[1] + room2[3] // 2
+            
+            # Create corridor between rooms
+            path = create_corridor((start_x, start_y), (end_x, end_y))
+            if path:
+                for x, y in path:
+                    grid[y][x] = 0
+                    # Add width to corridors
+                    for w in range(corridor_width):
+                        for dx, dy in [(w, 0), (0, w), (-w, 0), (0, -w)]:
+                            nx, ny = x + dx, y + dy
+                            if 0 < nx < COLS-1 and 0 < ny < ROWS-1:
+                                grid[ny][nx] = 0
         
-        # Get center points of rooms
-        start_x = room1[0] + room1[2] // 2
-        start_y = room1[1] + room1[3] // 2
-        end_x = room2[0] + room2[2] // 2
-        end_y = room2[1] + room2[3] // 2
+    # Add some extra connections for deeper levels (with safety checks)
+    if level > 2 and len(rooms) >= 4:  # Only if we have enough rooms
+        extra_connections = min(3, level // 2)  # More connections in deeper levels
+        max_attempts = extra_connections * 2  # Allow multiple attempts to find valid connections
         
-        # Create corridor between rooms
-        path = create_corridor((start_x, start_y), (end_x, end_y))
-        if path:
-            for x, y in path:
-                grid[y][x] = 0
-                # Add some width to corridors
-                for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-                    nx, ny = x + dx, y + dy
-                    if 0 < nx < COLS-1 and 0 < ny < ROWS-1:
-                        grid[ny][nx] = 0
+        connections_made = 0
+        attempts = 0
+        
+        while connections_made < extra_connections and attempts < max_attempts:
+            # Make sure we have enough rooms ahead to make a connection
+            if len(rooms) <= 3:
+                break
+                
+            # Pick two rooms that aren't adjacent
+            i = random.randint(0, len(rooms) - 3)
+            if i + 2 >= len(rooms):
+                attempts += 1
+                continue
+                
+            max_j = min(i + 4, len(rooms) - 1)
+            if i + 2 > max_j:  # Can't make a valid connection
+                attempts += 1
+                continue
+                
+            j = random.randint(i + 2, max_j)
+            
+            room1 = rooms[i]
+            room2 = rooms[j]
+            
+            # Get center points of rooms
+            start_x = room1[0] + room1[2] // 2
+            start_y = room1[1] + room1[3] // 2
+            end_x = room2[0] + room2[2] // 2
+            end_y = room2[1] + room2[3] // 2
+            
+            # Create corridor between rooms
+            path = create_corridor((start_x, start_y), (end_x, end_y))
+            if path:
+                for x, y in path:
+                    grid[y][x] = 0
+                    # Add some width to corridors
+                    for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                        nx, ny = x + dx, y + dy
+                        if 0 < nx < COLS-1 and 0 < ny < ROWS-1:
+                            grid[ny][nx] = 0
+                connections_made += 1
+            
+            attempts += 1
 
     # Create wall sprites
     for y in range(ROWS):
@@ -550,8 +738,52 @@ def generate_dungeon(level):
                 walls.add(wall)
                 all_sprites.add(wall)
 
-    # Place player in first room
-    player_x, player_y = rooms[0][0] + 1, rooms[0][1] + 1
+    # Randomize room order for player and stairs placement
+    # This prevents always starting in the top-left and ending in the bottom-right
+    available_rooms = rooms.copy()
+    random.shuffle(available_rooms)
+    
+    # Select entrance and exit rooms that are far apart
+    # We want to ensure a good distance between start and end
+    entrance_room = None
+    exit_room = None
+    
+    # Try to maximize Manhattan distance between entrance and exit
+    max_distance = 0
+    for i, room1 in enumerate(available_rooms):
+        for j, room2 in enumerate(available_rooms):
+            if i != j:
+                # Calculate centers of rooms
+                center1_x = room1[0] + room1[2] // 2
+                center1_y = room1[1] + room1[3] // 2
+                center2_x = room2[0] + room2[2] // 2
+                center2_y = room2[1] + room2[3] // 2
+                
+                # Calculate Manhattan distance between room centers
+                distance = abs(center1_x - center2_x) + abs(center1_y - center2_y)
+                
+                if distance > max_distance:
+                    max_distance = distance
+                    entrance_room = room1
+                    exit_room = room2
+    
+    # If we couldn't find rooms far apart, just use first and last
+    if entrance_room is None or exit_room is None:
+        entrance_room = available_rooms[0]
+        exit_room = available_rooms[-1]
+
+    # Place player in entrance room
+    # Find a clear spot near the center of the entrance room
+    room_center_x = entrance_room[0] + entrance_room[2] // 2
+    room_center_y = entrance_room[1] + entrance_room[3] // 2
+    
+    # Look for a good spot near the center
+    player_x, player_y = room_center_x, room_center_y
+    
+    # Make sure it's a valid spot (not too close to walls)
+    player_x = max(entrance_room[0] + 1, min(player_x, entrance_room[0] + entrance_room[2] - 2))
+    player_y = max(entrance_room[1] + 1, min(player_y, entrance_room[1] + entrance_room[3] - 2))
+    
     if player is None:  # Only create new player if one doesn't exist
         player = Player(player_x, player_y)
         party_members = [
@@ -564,34 +796,97 @@ def generate_dungeon(level):
         player.rect.y = player_y * GRID_SIZE + 1
     all_sprites.add(player)
 
-    # Place stairs in last room
-    stairs_x, stairs_y = rooms[-1][0] + rooms[-1][2] - 2, rooms[-1][1] + rooms[-1][3] - 2
+    # Place stairs in exit room
+    # Find a clear spot near the center of the exit room
+    exit_center_x = exit_room[0] + exit_room[2] // 2
+    exit_center_y = exit_room[1] + exit_room[3] // 2
+    
+    # Look for a good spot near the center
+    stairs_x, stairs_y = exit_center_x, exit_center_y
+    
+    # Make sure it's a valid spot (not too close to walls)
+    stairs_x = max(exit_room[0] + 1, min(stairs_x, exit_room[0] + exit_room[2] - 2))
+    stairs_y = max(exit_room[1] + 1, min(stairs_y, exit_room[1] + exit_room[3] - 2))
+    
     stairs = Stairs(stairs_x, stairs_y)
     all_sprites.add(stairs)
 
-    # Add enemies and items to rooms
-    for room in rooms[1:-1]:  # Skip first and last room
-        x, y, w, h = room
-        for _ in range(random.randint(1, 3 + level // 2)):
-            enemy_x, enemy_y = random.randint(x+1, x+w-2), random.randint(y+1, y+h-2)
-            enemy = Enemy(enemy_x, enemy_y, level)
-            enemies.add(enemy)
-            all_sprites.add(enemy)
+    # Avoid placing enemies in entrance and exit rooms
+    enemy_rooms = [room for room in available_rooms if room != entrance_room and room != exit_room]
 
-        if random.random() < 0.7:  # 70% chance for an item
+    # Add enemies and items to rooms - vary by level
+    enemy_chance = 0.7 + (level * 0.05)  # Higher level = more enemies
+    item_chance = 0.7 - (level * 0.03)  # Higher level = slightly fewer items
+    
+    for room in enemy_rooms:
+        x, y, w, h = room
+        
+        # Enemy count based on room size and level
+        room_area = w * h
+        max_enemies = max(1, min(room_area // 15, 3 + level // 2))
+        enemy_count = random.randint(1, max_enemies)
+        
+        for _ in range(enemy_count):
+            if random.random() < enemy_chance:
+                enemy_x, enemy_y = random.randint(x+1, x+w-2), random.randint(y+1, y+h-2)
+                enemy = Enemy(enemy_x, enemy_y, level)
+                enemies.add(enemy)
+                all_sprites.add(enemy)
+
+        # Item placement
+        if random.random() < item_chance:
             item_x, item_y = random.randint(x+1, x+w-2), random.randint(y+1, y+h-2)
-            item_type = random.choice(['health_potion', 'strength_potion', 'speed_potion'])
+            
+            # Item type varies by level
+            if level <= 3:
+                item_weights = [0.7, 0.2, 0.1]  # More health potions in early levels
+            elif level <= 6:
+                item_weights = [0.5, 0.3, 0.2]  # More balanced in mid levels
+            else:
+                item_weights = [0.4, 0.3, 0.3]  # More attribute potions in later levels
+                
+            item_type = random.choices(
+                ['health_potion', 'strength_potion', 'speed_potion'],
+                weights=item_weights, k=1)[0]
+                
             item = Item(item_x, item_y, item_type)
             items.add(item)
             all_sprites.add(item)
-
-    # Add some obstacles in corridors
-    for _ in range(10 + level * 2):
+    
+    # Add items to entrance room (but no enemies)
+    if random.random() < item_chance * 1.5:  # Higher chance for item in starting room
+        x, y, w, h = entrance_room
+        item_x, item_y = random.randint(x+1, x+w-2), random.randint(y+1, y+h-2)
+        
+        # More likely to be health potion in entrance room
+        item_weights = [0.8, 0.1, 0.1]
+        item_type = random.choices(
+            ['health_potion', 'strength_potion', 'speed_potion'],
+            weights=item_weights, k=1)[0]
+            
+        item = Item(item_x, item_y, item_type)
+        items.add(item)
+        all_sprites.add(item)
+    
+    # Add obstacles in corridors based on level
+    if level_mod == 0:  # Cavernous level - fewer obstacles
+        obstacle_count = 5 + level
+    elif level_mod == 1:  # Cramped level - more obstacles
+        obstacle_count = 15 + level * 2
+    else:
+        obstacle_count = 10 + level * 2
+        
+    for _ in range(obstacle_count):
         x, y = random.randint(1, COLS-2), random.randint(1, ROWS-2)
         if grid[y][x] == 0 and not any(sprite.rect.collidepoint(x*GRID_SIZE, y*GRID_SIZE) for sprite in all_sprites):
-            wall = Wall(x, y)
-            walls.add(wall)
-            all_sprites.add(wall)
+            # Don't block critical paths
+            neighbors_open = sum(1 for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)] 
+                               if 0 < x+dx < COLS-1 and 0 < y+dy < ROWS-1 and grid[y+dy][x+dx] == 0)
+            
+            if neighbors_open >= 3:  # Only add obstacle if it won't block a path
+                wall = Wall(x, y)
+                walls.add(wall)
+                all_sprites.add(wall)
 
 # Generate initial dungeon
 generate_dungeon(1)
