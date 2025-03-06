@@ -110,6 +110,25 @@ dungeon_tile2 = load_image('tiles/dungeon_tile2.png', (GRID_SIZE, GRID_SIZE))
 chest_tile = load_image('tiles/chest_tile.png', (GRID_SIZE, GRID_SIZE))
 stairs_tile = load_image('tiles/stairs_tile.png', (GRID_SIZE, GRID_SIZE))
 
+# Load treasure images for the popup
+treasure_potion_image = load_image('treasures/potion.png', (64, 64))
+treasure_gold_image = load_image('treasures/gold.png', (64, 64))
+treasure_weapon_image = load_image('treasures/weapon.png', (64, 64))
+treasure_armor_image = load_image('treasures/armor.png', (64, 64))
+treasure_gem_image = load_image('treasures/gem.png', (64, 64))
+
+# Treasure descriptions 
+TREASURES = [
+    {"name": "Healing Elixir", "description": "Restores 20 health points", "image": treasure_potion_image, "type": "health_potion"},
+    {"name": "Strength Tonic", "description": "Increases attack by 5", "image": treasure_potion_image, "type": "strength_potion"},
+    {"name": "Swift Boots", "description": "Increases speed by 0.2", "image": treasure_armor_image, "type": "speed_potion"},
+    {"name": "Gold Coins", "description": "A small fortune", "image": treasure_gold_image, "type": "health_potion"},
+    {"name": "Ancient Blade", "description": "A powerful weapon", "image": treasure_weapon_image, "type": "strength_potion"},
+    {"name": "Dragon Scale Armor", "description": "Protective gear", "image": treasure_armor_image, "type": "health_potion"},
+    {"name": "Ruby Gem", "description": "A precious stone", "image": treasure_gem_image, "type": "strength_potion"},
+    {"name": "Magic Amulet", "description": "Glows with arcane energy", "image": treasure_gem_image, "type": "speed_potion"},
+]
+
 # Create the screen
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Dungeons of Eldoria")
@@ -1006,6 +1025,96 @@ def show_game_over_menu():
                         else:
                             return "quit"
 
+def show_treasure_popup(screen, treasure_type):
+    """
+    Show an exciting popup when a treasure chest is collected
+    """
+    # Find treasures that match the type
+    matching_treasures = [t for t in TREASURES if t["type"] == treasure_type]
+    if not matching_treasures:
+        matching_treasures = TREASURES  # Fallback to all treasures
+    
+    # Choose a random treasure from matching ones
+    treasure = random.choice(matching_treasures)
+    
+    # Play the discovery sound
+    discovery_sound = load_sound('sounds/Magical Sting 2.wav')
+    if discovery_sound:
+        discovery_sound.play()
+    
+    # Create a popup surface
+    popup_width = 400
+    popup_height = 200
+    popup = pygame.Surface((popup_width, popup_height), pygame.SRCALPHA)
+    popup.fill((50, 50, 50, 230))  # Semi-transparent dark gray
+    pygame.draw.rect(popup, YELLOW, (0, 0, popup_width, popup_height), 4)  # Gold border
+    
+    # Draw treasure image
+    image_rect = treasure["image"].get_rect(center=(popup_width//4, popup_height//2))
+    popup.blit(treasure["image"], image_rect)
+    
+    # Draw text
+    font_large = pygame.font.Font(None, 36)
+    font_small = pygame.font.Font(None, 24)
+    
+    # Treasure name
+    name_text = font_large.render(f"You found: {treasure['name']}!", True, YELLOW)
+    name_rect = name_text.get_rect(midtop=(popup_width//2 + 50, 30))
+    popup.blit(name_text, name_rect)
+    
+    # Treasure description
+    desc_text = font_small.render(treasure['description'], True, WHITE)
+    desc_rect = desc_text.get_rect(midtop=(popup_width//2 + 50, 80))
+    popup.blit(desc_text, desc_rect)
+    
+    # "Press any key to continue" text
+    continue_text = font_small.render("Press any key to continue", True, WHITE)
+    continue_rect = continue_text.get_rect(midbottom=(popup_width//2, popup_height - 20))
+    popup.blit(continue_text, continue_rect)
+    
+    # Animation for the popup
+    original_scale = 0.1
+    target_scale = 1.0
+    current_scale = original_scale
+    scaling_speed = 0.05
+    
+    # Position in center of screen
+    screen_center_x = WIDTH // 2
+    screen_center_y = HEIGHT // 2
+    
+    # Animation loop
+    waiting_for_key = True
+    while waiting_for_key:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                return
+            if event.type == pygame.KEYDOWN and current_scale >= target_scale * 0.95:
+                waiting_for_key = False
+        
+        # Update scale for animation
+        if current_scale < target_scale:
+            current_scale += scaling_speed
+            current_scale = min(current_scale, target_scale)
+        
+        # Scale the popup
+        current_width = int(popup_width * current_scale)
+        current_height = int(popup_height * current_scale)
+        if current_width > 0 and current_height > 0:  # Prevent scaling to zero
+            scaled_popup = pygame.transform.scale(popup, (current_width, current_height))
+            popup_rect = scaled_popup.get_rect(center=(screen_center_x, screen_center_y))
+            
+            # Draw the game behind the popup
+            # Draw the scaled popup
+            screen.blit(scaled_popup, popup_rect)
+            pygame.display.flip()
+            clock.tick(FRAME_RATE)
+    
+    # Play a sound when closing the popup
+    close_sound = load_sound('sounds/Level up Pickup (Rpg).wav')
+    if close_sound:
+        close_sound.play()
+
 # Add new classes for combat
 class CombatEnemy:
     def __init__(self, level):
@@ -1707,6 +1816,9 @@ while running:
         # Check for collisions with items
         item_hits = pygame.sprite.spritecollide(player, items, True)
         for item in item_hits:
+            # Show treasure popup before applying item effects
+            show_treasure_popup(screen, item.type)
+            
             if item.type == 'health_potion':
                 player.health = min(player.max_health, player.health + 20)
             elif item.type == 'strength_potion':
